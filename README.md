@@ -1,4 +1,4 @@
-# Medical Chatbot with Omicron Data Analysis
+# Medical Chatbot
 
 A medical chatbot built with Python, LangChain, Streamlit, and React that can analyze omicron tweet data and answer medical queries using AI.
 
