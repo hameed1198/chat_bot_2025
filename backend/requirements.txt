@@ -1,0 +1,13 @@
+streamlit
+langchain
+langchain-openai
+langchain-google-genai
+pandas
+numpy
+python-dotenv
+requests
+fastapi
+uvicorn
+pydantic
+openai
+google-generativeai

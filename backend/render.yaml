@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: medicare-ai-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        value: AIzaSyC9WVZri_Gas_scMlkk-OeveNCkR5LMLCc
+      - key: PYTHON_VERSION
+        value: 3.11.0

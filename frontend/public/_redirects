@@ -1,0 +1,15 @@
+/*    /index.html   200
+
+# Security headers
+/*
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Cache static assets
+/static/*
+  Cache-Control: max-age=31536000
+
+# API proxy (optional)
+/api/*  https://your-backend-url.railway.app/api/:splat  200

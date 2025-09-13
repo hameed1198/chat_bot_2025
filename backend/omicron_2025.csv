@@ -1,0 +1,18 @@
+id,text,date,user,location,sentiment
+1,"Just tested positive for omicron. Symptoms are mild - mainly sore throat and fatigue. Much better than I expected!",2024-01-15,user123,New York,positive
+2,"Day 3 of omicron. Fever broke yesterday and feeling much better today. Recovery seems faster than previous variants.",2024-01-16,healthworker,California,positive
+3,"Omicron symptoms started with runny nose and headache. Body aches kicked in on day 2 but manageable.",2024-01-17,mom_of_two,Texas,neutral
+4,"Lost taste briefly with omicron but it came back within 5 days. Grateful for the quick recovery time.",2024-01-18,teacher2024,Florida,positive
+5,"Sore throat was the worst part of omicron for me. Lasted about 4 days then gradually got better.",2024-01-19,student_life,Illinois,neutral
+6,"Omicron hit our whole family. Kids recovered faster - about 3-4 days. Adults took a bit longer but still mild.",2024-01-20,family_dad,Georgia,positive
+7,"Fatigue from omicron lingered for about a week. Otherwise symptoms were much milder than Delta.",2024-01-21,nurse_jane,Arizona,neutral
+8,"Headache and body aches with omicron lasted 2-3 days. Thankful it wasn't severe. Rest and fluids helped.",2024-01-22,gym_enthusiast,Colorado,positive
+9,"Omicron gave me a persistent cough that lasted about 10 days. Otherwise manageable symptoms.",2024-01-23,writer_life,Washington,neutral
+10,"Breakthrough omicron case even with booster. Mild symptoms - just felt like a cold for 5 days.",2024-01-24,scientist_bob,Oregon,positive
+11,"Omicron fever was lower than expected. Mostly just tired and had a runny nose for about a week.",2024-01-25,retail_worker,Michigan,neutral
+12,"Recovery from omicron was quicker than anticipated. Back to normal activities after 6 days.",2024-01-26,athlete_alex,Ohio,positive
+13,"Omicron symptoms included mild fever, sore throat, and congestion. Lasted about 5 days total.",2024-01-27,parent_help,Pennsylvania,neutral
+14,"Grateful omicron was mild for our elderly parents. Just cold-like symptoms that resolved quickly.",2024-01-28,caregiver_sue,North Carolina,positive
+15,"Omicron caused mainly upper respiratory symptoms. Much different from the original variant.",2024-01-29,doctor_smith,Virginia,neutral
+16,"Tested positive for omicron but symptoms were so mild I almost didn't notice. Lucky!",2024-01-30,young_prof,Massachusetts,positive
+17,"Omicron gave me brain fog for a few days but otherwise very manageable symptoms.",2024-01-31,researcher,Connecticut,neutral
