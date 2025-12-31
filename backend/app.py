@@ -146,13 +146,15 @@ class MediCareApp:
             
             # Get bot response
             with st.chat_message("assistant"):
-                with st.spinner("🤔 Thinking..."):
-                    response = self.chatbot.get_response(
-                        prompt, 
-                        st.session_state.user_name, 
-                        st.session_state.selected_service
-                    )
-                st.markdown(response)
+                message_placeholder = st.empty()
+                message_placeholder.markdown("✨ *Analyzing with Gemini 1.5 Pro...*")
+                
+                response = self.chatbot.get_response(
+                    prompt, 
+                    st.session_state.user_name, 
+                    st.session_state.selected_service
+                )
+                message_placeholder.markdown(response)
             
             # Add assistant response
             st.session_state.messages.append({"role": "assistant", "content": response})
@@ -175,25 +177,78 @@ class MediCareApp:
 # Custom CSS for better styling
 st.markdown("""
 <style>
+    /* Main theme colors */
+    :root {
+        --primary: #667eea;
+        --secondary: #764ba2;
+        --success: #48bb78;
+        --danger: #f56565;
+    }
+    
+    /* Button styling */
     .stButton > button {
-        border-radius: 10px;
+        border-radius: 12px;
         border: none;
-        padding: 10px 20px;
+        padding: 12px 24px;
         font-weight: 600;
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
     }
     .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
     }
+    
+    /* Input styling */
     .stTextInput > div > div > input {
-        border-radius: 10px;
-        border: 2px solid #e1e5e9;
+        border-radius: 12px;
+        border: 2px solid #e2e8f0;
+        padding: 12px 16px;
+        transition: all 0.3s ease;
     }
+    .stTextInput > div > div > input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+    }
+    
+    /* Chat message styling */
     .stChatMessage {
-        border-radius: 10px;
+        border-radius: 16px;
+        margin: 12px 0;
+        animation: fadeIn 0.3s ease-out;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Spinner enhancement */
+    .stSpinner > div {
+        border-color: #667eea transparent transparent transparent;
+    }
+    
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+    }
+    
+    /* Success/Info boxes */
+    .success-box {
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 12px;
         margin: 10px 0;
     }
+    
+    /* Pulse animation for loading */
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .pulse { animation: pulse 1.5s infinite; }
 </style>
 """, unsafe_allow_html=True)
 

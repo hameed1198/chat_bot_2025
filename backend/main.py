@@ -60,34 +60,65 @@ async def get_gemini_response(message: str, user_name: str = "", service: str = 
     if not GEMINI_API_KEY:
         return get_fallback_response(message, user_name, service)
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Handle greetings first
+    message_lower = message.lower().strip()
+    greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'hola']
+    if message_lower in greetings or message_lower.rstrip('!') in greetings:
+        return f"""👋 **Hello {user_name}!**
+
+Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 1.5 Pro.
+
+**How can I assist you today?**
+
+🩺 **Health Assessment** - Describe your symptoms for guidance
+💊 **Medications** - Ask about drug interactions or usage  
+🏥 **General Health** - Any health-related questions
+📅 **Appointments** - Help finding healthcare providers
+🚨 **Emergency** - Urgent medical guidance
+
+*Just type your question and I'll provide helpful, professional guidance!*
+
+⚠️ Remember: I provide educational information. Always consult healthcare professionals for medical decisions."""
+
+    # Handle thank you
+    if 'thank' in message_lower:
+        return f"""😊 **You're welcome, {user_name}!**
+
+I'm happy to help! Feel free to ask if you have any more questions.
+
+*Take care of yourself!* 💙"""
+
+    # Handle goodbye
+    if 'bye' in message_lower or 'goodbye' in message_lower:
+        return f"""👋 **Goodbye {user_name}!**
+
+Thank you for using MediCare AI. Take care of your health!
+
+*Wishing you good health!* 🌟"""
+    
+    # Use Gemini 2.5 Flash - latest available model
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     service_context = get_service_context(service)
     
-    prompt = f"""You are MediCare AI, a comprehensive healthcare assistant.
+    prompt = f"""You are MediCare AI, a friendly and knowledgeable healthcare assistant.
 
-User: {user_name if user_name else "User"}
-Service Selected: {service if service else "General Consultation"}
+User Name: {user_name if user_name else "User"}
+Service: {service if service else "General Health"}
 
 {service_context}
 
-PRIORITY ORDER:
-1. GENERAL HEALTH QUERIES (highest priority)
-2. Service-specific assistance 
-3. Emergency medical guidance
-4. Insurance and appointment help
+User Question: {message}
 
-User Query: {message}
+IMPORTANT GUIDELINES:
+1. Provide SPECIFIC, DETAILED answers to the user's exact question
+2. If asking about medications (like paracetamol), explain dosage, usage, side effects, and precautions
+3. If asking about symptoms (like fever), give specific treatment advice and when to see a doctor
+4. Be warm, professional, and thorough
+5. Use clear formatting with headers, bullet points, and emojis
+6. Always include a medical disclaimer at the end
 
-Instructions:
-- Be professional, caring, and comprehensive
-- Prioritize general health guidance and service-specific help
-- Provide actionable, practical advice
-- Use emojis and clear formatting
-- Include appropriate medical disclaimers
-- Tailor response to selected service when relevant
-
-Response format: Professional, well-structured with clear sections and helpful guidance."""
+Respond directly and specifically to what the user asked:"""
 
     try:
         payload = {
@@ -97,23 +128,33 @@ Response format: Professional, well-structured with clear sections and helpful g
                 }]
             }],
             "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95,
-                "maxOutputTokens": 1200,
+                "temperature": 0.6,
+                "topK": 32,
+                "topP": 0.9,
+                "maxOutputTokens": 2048,
             }
         }
         
+        print(f"🔍 DEBUG: Calling Gemini API for: {message[:50]}...")
         response = requests.post(url, json=payload, timeout=30)
+        print(f"🔍 DEBUG: Response status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
+            print(f"🔍 DEBUG: Response data keys: {data.keys()}")
             if 'candidates' in data and len(data['candidates']) > 0:
-                return data['candidates'][0]['content']['parts'][0]['text']
+                ai_response = data['candidates'][0]['content']['parts'][0]['text']
+                print(f"✅ DEBUG: Got AI response, length: {len(ai_response)}")
+                return ai_response
+            else:
+                print(f"❌ DEBUG: No candidates in response: {data}")
+        else:
+            print(f"❌ DEBUG: API error {response.status_code}: {response.text[:500]}")
                 
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        print(f"❌ DEBUG: Gemini API exception: {e}")
         
+    print("🔄 DEBUG: Falling back to template response")
     return get_fallback_response(message, user_name, service)
 
 def get_fallback_response(message: str, user_name: str = "", service: str = "") -> str:

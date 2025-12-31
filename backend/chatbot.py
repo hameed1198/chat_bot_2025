@@ -50,41 +50,59 @@ class MedicalChatbot:
         """Get response from Gemini API with comprehensive medical assistance."""
         import requests
         
-        # Use the correct model name for current Gemini API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.gemini_api_key}"
+        # Use Gemini 2.5 Flash - latest available model
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_api_key}"
+        
+        # Check for greetings first - respond naturally
+        greeting_words = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'greetings', 'hola']
+        if query.lower().strip() in greeting_words or query.lower().strip().rstrip('!') in greeting_words:
+            return f"""👋 **Hello {user_name}!**
+
+Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 1.5 Pro.
+
+**How can I assist you today?**
+
+🩺 **Health Assessment** - Describe your symptoms for guidance
+💊 **Medications** - Ask about drug interactions or usage  
+🏥 **General Health** - Any health-related questions
+📅 **Appointments** - Help finding healthcare providers
+🚨 **Emergency** - Urgent medical guidance
+
+*Just type your question and I'll provide helpful, professional guidance!*
+
+⚠️ Remember: I provide educational information. Always consult healthcare professionals for medical decisions."""
         
         # Create context-aware prompt
         service_context = self.get_service_context(selected_service)
         omicron_context = self.get_minimal_omicron_context() if "omicron" in query.lower() or "covid" in query.lower() else ""
         
-        prompt = f"""You are MediCare AI, a comprehensive healthcare assistant. 
+        prompt = f"""You are MediCare AI, a friendly and comprehensive healthcare assistant. 
 
-User: {user_name if user_name else "User"}
+User Name: {user_name if user_name else "User"}
 Service Selected: {selected_service if selected_service else "General Consultation"}
 
 {service_context}
 
-PRIORITY ORDER:
-1. GENERAL HEALTH QUERIES (highest priority)
-2. Service-specific assistance 
-3. Emergency medical guidance
-4. Insurance and appointment help
-5. Omicron/COVID info (lowest priority - only if specifically asked)
+IMPORTANT GUIDELINES:
+1. If user sends a casual message (like "thanks", "ok", "bye"), respond naturally and friendly
+2. For health questions, provide detailed helpful information
+3. Be warm, empathetic, and professional
+4. Use emojis appropriately to make responses friendly
+5. Structure responses clearly with sections when needed
 
 User Query: {query}
 
 {omicron_context}
 
 Instructions:
-- Be professional, caring, and comprehensive
-- Prioritize general health guidance and service-specific help
-- Provide actionable, practical advice
-- Use emojis and clear formatting
-- Include appropriate medical disclaimers
-- If omicron/COVID mentioned, give brief helpful info but focus on general health
-- Tailor response to selected service when relevant
+- Respond naturally to the user's message
+- If it's a greeting or casual message, be friendly and welcoming
+- If it's a health question, provide comprehensive guidance
+- Use clear formatting with headers and bullet points for health info
+- Include medical disclaimers when giving health advice
+- Be conversational and caring
 
-Response format: Professional, well-structured with clear sections and helpful guidance."""
+Response:
 
         try:
             payload = {
@@ -94,11 +112,17 @@ Response format: Professional, well-structured with clear sections and helpful g
                     }]
                 }],
                 "generationConfig": {
-                    "temperature": 0.7,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 1200,
-                }
+                    "temperature": 0.6,  # Slightly lower for more accurate medical info
+                    "topK": 32,
+                    "topP": 0.9,
+                    "maxOutputTokens": 2048,  # Increased for detailed responses
+                },
+                "safetySettings": [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
+                ]
             }
             
             print(f"🔍 DEBUG: Making Gemini API call for query: {query[:50]}...")
@@ -275,15 +299,6 @@ Response format: Professional, well-structured with clear sections and helpful g
         
         return terms[:3]  # Limit to 3 terms to avoid overly broad searches
     
-    # Keep legacy methods for backward compatibility
-    def handle_data_query(self, query: str) -> str:
-        """Legacy method - now redirects to AI-first approach."""
-        return self.process_ai_first_query(query)
-    
-    def handle_medical_query(self, query: str) -> str:
-        """Legacy method - now redirects to AI-first approach."""
-        return self.process_ai_first_query(query)
-    
     def is_data_query(self, query: str) -> bool:
         """Check if query is about omicron data analysis."""
         data_keywords = [
@@ -413,19 +428,6 @@ Response format: Professional, well-structured with clear sections and helpful g
         
         return response
     
-    def extract_search_terms(self, query: str) -> List[str]:
-        """Extract search terms from user query."""
-        # Remove common question words and find meaningful terms
-        stop_words = {'search', 'find', 'about', 'related', 'to', 'for', 'tweets', 'data', 'omicron', 'show', 'me'}
-        words = re.findall(r'\b\w+\b', query.lower())
-        terms = [word for word in words if word not in stop_words and len(word) > 2]
-        
-        # Also look for quoted phrases
-        quoted_terms = re.findall(r'"([^"]*)"', query)
-        terms.extend(quoted_terms)
-        
-        return terms[:3]  # Limit to 3 terms to avoid overly broad searches
-    
     def extract_topic(self, query: str) -> Optional[str]:
         """Extract topic from summary request."""
         # Look for pattern "about X" or "of X"
@@ -487,8 +489,50 @@ Brief Omicron Reference: Mild COVID variant with sore throat, fatigue, runny nos
     
     def get_fallback_response(self, query: str, user_name: str = "", selected_service: str = "") -> str:
         """Comprehensive fallback response when AI APIs are unavailable."""
-        query_lower = query.lower()
+        query_lower = query.lower().strip()
         
+        # Handle greetings naturally
+        greeting_words = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'greetings', 'hola']
+        if query_lower in greeting_words or query_lower.rstrip('!') in greeting_words:
+            return f"""👋 **Hello {user_name}!**
+
+Welcome to MediCare AI! I'm here to help with your healthcare needs.
+
+**What can I help you with today?**
+🩺 Health questions and symptom guidance
+💊 Medication information
+🏥 General wellness tips
+📅 Healthcare appointments
+🚨 Emergency guidance
+
+*Just ask me anything health-related!*"""
+        
+        # Handle thank you messages
+        if any(word in query_lower for word in ['thank', 'thanks', 'appreciate']):
+            return f"""😊 **You're welcome, {user_name}!**
+
+I'm glad I could help! Feel free to ask if you have any more questions.
+
+**Remember:**
+• Stay hydrated and get enough rest
+• Don't hesitate to consult a doctor for persistent concerns
+• I'm here 24/7 for your health questions!
+
+*Take care of yourself!* 💙"""
+        
+        # Handle goodbye messages
+        if any(word in query_lower for word in ['bye', 'goodbye', 'see you', 'later']):
+            return f"""👋 **Goodbye {user_name}!**
+
+Thank you for using MediCare AI. Take care of your health!
+
+**Quick Reminders:**
+• Stay healthy and active
+• Regular check-ups are important
+• Come back anytime you need health guidance
+
+*Wishing you good health!* 🌟"""
+
         if selected_service == "Health Assessment":
             return f"""🩺 **Health Assessment for {user_name}**
 

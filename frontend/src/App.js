@@ -97,10 +97,47 @@ function App() {
 
   const getMockResponse = async (message, service) => {
     // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
+    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
+    
+    const lowerMessage = message.toLowerCase().trim();
+    
+    // Handle greetings naturally
+    const greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy'];
+    if (greetings.includes(lowerMessage) || greetings.includes(lowerMessage.replace('!', ''))) {
+      return `👋 **Hello ${userName}!**
+
+Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 1.5 Pro.
+
+**How can I assist you today?**
+
+🩺 **Health Assessment** - Describe your symptoms for guidance
+💊 **Medications** - Ask about drug interactions or usage  
+🏥 **General Health** - Any health-related questions
+📅 **Appointments** - Help finding healthcare providers
+🚨 **Emergency** - Urgent medical guidance
+
+*Just type your question and I'll provide helpful guidance!*`;
+    }
+    
+    // Handle thank you
+    if (lowerMessage.includes('thank') || lowerMessage.includes('thanks')) {
+      return `😊 **You're welcome, ${userName}!**
+
+I'm happy to help! Feel free to ask if you have any more questions.
+
+*Take care of yourself!* 💙`;
+    }
+    
+    // Handle goodbye
+    if (lowerMessage.includes('bye') || lowerMessage.includes('goodbye')) {
+      return `👋 **Goodbye ${userName}!**
+
+Thank you for using MediCare AI. Take care of your health!
+
+*Wishing you good health!* 🌟`;
+    }
     
     const serviceName = services[service] || 'General Healthcare';
-    const lowerMessage = message.toLowerCase();
     
     // Service-specific responses with health focus
     if (service === 'health' || lowerMessage.includes('symptom') || lowerMessage.includes('pain') || lowerMessage.includes('fever')) {
@@ -248,7 +285,7 @@ Question: "${message}"
         <div className="welcome-header">
           <h1>🏥 MediCare AI Assistant</h1>
           <h3>Your Comprehensive Healthcare Companion</h3>
-          <p className="welcome-subtitle">Powered by Gemini AI • Available 24/7 • Trusted Healthcare Guidance</p>
+          <p className="welcome-subtitle">Powered by Gemini 1.5 Pro AI • Available 24/7 • Trusted Healthcare Guidance</p>
         </div>
         
         <div className="welcome-form">
@@ -379,7 +416,7 @@ Question: "${message}"
                     <span></span>
                     <span></span>
                   </div>
-                  MediCare AI is thinking...
+                  <span className="typing-text">✨ Analyzing with Gemini 1.5 Pro...</span>
                 </div>
               </div>
             </div>

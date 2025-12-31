@@ -61,7 +61,8 @@ class APIHandler:
             return None
         
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={self.gemini_api_key}"
+            # Using Gemini 2.5 Flash - latest available model
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.gemini_api_key}"
             
             # Combine system message and prompt
             full_prompt = prompt
@@ -75,11 +76,17 @@ class APIHandler:
                     }]
                 }],
                 "generationConfig": {
-                    "temperature": 0.7,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 1000,
-                }
+                    "temperature": 0.6,  # Lower for more accurate medical responses
+                    "topK": 32,
+                    "topP": 0.9,
+                    "maxOutputTokens": 2048,  # Increased for detailed responses
+                },
+                "safetySettings": [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"}
+                ]
             }
             
             response = requests.post(url, json=data, timeout=30)
