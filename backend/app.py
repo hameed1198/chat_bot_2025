@@ -46,7 +46,12 @@ class MediCareApp:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.markdown("### 👋 Welcome! Let's get started")
-            name = st.text_input("", placeholder="Please enter your name to continue...", key="name_input")
+            name = st.text_input(
+                "Name",
+                placeholder="Please enter your name to continue...",
+                key="name_input",
+                label_visibility="collapsed",
+            )
             
             if st.button("🚀 Start Your Healthcare Journey", type="primary", use_container_width=True):
                 if name.strip():
@@ -147,7 +152,7 @@ class MediCareApp:
             # Get bot response
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
-                message_placeholder.markdown("✨ *Analyzing with Gemini 1.5 Pro...*")
+                message_placeholder.markdown("✨ *Analyzing with Gemini 2.5 Flash...*")
                 
                 response = self.chatbot.get_response(
                     prompt, 

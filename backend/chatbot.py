@@ -58,7 +58,7 @@ class MedicalChatbot:
         if query.lower().strip() in greeting_words or query.lower().strip().rstrip('!') in greeting_words:
             return f"""👋 **Hello {user_name}!**
 
-Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 1.5 Pro.
+Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 2.5 Flash.
 
 **How can I assist you today?**
 
@@ -103,6 +103,7 @@ Instructions:
 - Be conversational and caring
 
 Response:
+"""
 
         try:
             payload = {

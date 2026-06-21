@@ -37,17 +37,15 @@ function App() {
   const handleServiceSelect = (serviceKey) => {
     setSelectedService(serviceKey);
     setServiceSelected(true);
-    // Add welcome message for the selected service
-    const welcomeMessage = {
+    setMessages([{
       role: 'assistant',
       content: `Hello ${userName}! 👋 I'm ready to help you with ${services[serviceKey].toLowerCase()}. What would you like to know?`
-    };
-    setMessages([welcomeMessage]);
+    }]);
   };
 
-  const resetToServiceMenu = () => {
-    setServiceSelected(false);
+  const resetChat = () => {
     setSelectedService('');
+    setServiceSelected(false);
     setMessages([]);
   };
 
@@ -59,8 +57,63 @@ function App() {
     setInputMessage('');
     setIsLoading(true);
 
+    const lowerMsg = inputMessage.toLowerCase();
+    const isHospitalQuery = selectedService === 'appointments' ||
+      lowerMsg.includes('hospital') || lowerMsg.includes('nearest doctor') ||
+      lowerMsg.includes('clinic') || lowerMsg.includes('near me') ||
+      lowerMsg.includes('doctor near') || lowerMsg.includes('appointment') ||
+      lowerMsg.includes('book') && lowerMsg.includes('doctor');
+
+    // Auto-select service if none chosen based on message keywords
+    if (!selectedService) {
+      if (lowerMsg.includes('hospital') || lowerMsg.includes('appointment') || lowerMsg.includes('doctor near') || lowerMsg.includes('clinic') || lowerMsg.includes('near me')) {
+        setSelectedService('appointments');
+        setServiceSelected(true);
+      } else if (lowerMsg.includes('emergency') || lowerMsg.includes('urgent') || lowerMsg.includes('911')) {
+        setSelectedService('emergency');
+        setServiceSelected(true);
+      } else if (lowerMsg.includes('insurance') || lowerMsg.includes('coverage') || lowerMsg.includes('claim')) {
+        setSelectedService('insurance');
+        setServiceSelected(true);
+      } else if (lowerMsg.includes('symptom') || lowerMsg.includes('pain') || lowerMsg.includes('fever') || lowerMsg.includes('sick')) {
+        setSelectedService('health');
+        setServiceSelected(true);
+      } else {
+        setSelectedService('chat');
+        setServiceSelected(true);
+      }
+    }
+
+    let locationCoords = null;
+
+    if (isHospitalQuery) {
+      try {
+        const locationData = await getNearbyHospitals();
+        // Always store coords so we can send them to the backend
+        locationCoords = { latitude: locationData.latitude, longitude: locationData.longitude };
+        const formatted = formatHospitalResults(locationData.elements, locationData.latitude, locationData.longitude);
+        if (formatted) {
+          setMessages(prev => [...prev, { role: 'assistant', content: formatted }]);
+          setIsLoading(false);
+          return;
+        }
+        // Overpass returned 0 named results — fall through to backend WITH coordinates
+      } catch (err) {
+        // Location permission denied
+        if (err.code === 1) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: `📍 **Location Access Required**\n\nTo show you **real nearby hospitals**, I need access to your location.\n\n**How to enable:**\n• Click the 🔒 padlock icon in your browser's address bar\n• Set **Location** to **Allow**\n• Then send your message again\n\n*Alternatively, tell me your city name and I can provide general guidance.*`
+          }]);
+          setIsLoading(false);
+          return;
+        }
+        // Other errors (timeout, API down) — fall through to backend API without coordinates
+      }
+    }
+
     try {
-      // API call to FastAPI backend
+      // API call to FastAPI backend — include location coords if available
       const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
       const response = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
@@ -70,7 +123,11 @@ function App() {
         body: JSON.stringify({
           message: inputMessage,
           userName: userName,
-          selectedService: selectedService
+          selectedService: selectedService,
+          ...(locationCoords && {
+            latitude: locationCoords.latitude,
+            longitude: locationCoords.longitude
+          })
         })
       });
 
@@ -79,20 +136,120 @@ function App() {
         const data = await response.json();
         botResponse = data.response;
       } else {
-        // Fallback response
         botResponse = await getMockResponse(inputMessage, selectedService);
       }
 
       const assistantMessage = { role: 'assistant', content: botResponse };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      // Fallback to mock response when backend is not available
       const botResponse = await getMockResponse(inputMessage, selectedService);
       const assistantMessage = { role: 'assistant', content: botResponse };
       setMessages(prev => [...prev, assistantMessage]);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Fetch real nearby hospitals using browser geolocation + OpenStreetMap Overpass API
+  const getNearbyHospitals = () => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation not supported'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const query = `[out:json][timeout:25];
+(
+  node["amenity"="hospital"](around:10000,${latitude},${longitude});
+  way["amenity"="hospital"](around:10000,${latitude},${longitude});
+  node["amenity"="clinic"](around:10000,${latitude},${longitude});
+  way["amenity"="clinic"](around:10000,${latitude},${longitude});
+  node["healthcare"="hospital"](around:10000,${latitude},${longitude});
+  node["amenity"="doctors"](around:5000,${latitude},${longitude});
+);
+out center;`;
+            const res = await fetch('https://overpass-api.de/api/interpreter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: `data=${encodeURIComponent(query)}`
+            });
+            const data = await res.json();
+            resolve({ elements: data.elements || [], latitude, longitude });
+          } catch (err) {
+            reject(err);
+          }
+        },
+        (error) => reject(error),
+        { timeout: 10000, maximumAge: 300000 }
+      );
+    });
+  };
+
+  // Format Overpass API results into a readable hospital list
+  const formatHospitalResults = (elements, userLat, userLon) => {
+    const getCoords = (el) => {
+      if (el.type === 'node' && el.lat) return { lat: el.lat, lon: el.lon };
+      if (el.center) return { lat: el.center.lat, lon: el.center.lon };
+      return null;
+    };
+
+    const calcDistance = (lat, lon) => {
+      const R = 6371;
+      const dLat = (lat - userLat) * Math.PI / 180;
+      const dLon = (lon - userLon) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(userLat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1);
+    };
+
+    const hospitals = elements
+      .filter(el => el.tags && el.tags.name)
+      .map(el => {
+        const coords = getCoords(el);
+        const dist = coords ? parseFloat(calcDistance(coords.lat, coords.lon)) : Infinity;
+        return { ...el, dist, coords };
+      })
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 8);
+
+    if (hospitals.length === 0) return null;
+
+    let result = `📍 **Real-Time Nearby Hospitals for ${userName}**\n\n`;
+    result += `*${hospitals.length} healthcare facilities found within 10km of your location*\n\n---\n\n`;
+
+    hospitals.forEach((h, i) => {
+      const t = h.tags;
+      result += `🏥 **${i + 1}. ${t.name}**\n`;
+      if (h.dist !== Infinity) result += `📏 **Distance:** ~${h.dist} km away\n`;
+
+      const addrParts = [t['addr:housenumber'], t['addr:street'], t['addr:suburb'], t['addr:city']].filter(Boolean);
+      if (addrParts.length) result += `📍 **Address:** ${addrParts.join(', ')}\n`;
+
+      const phone = t.phone || t['contact:phone'];
+      if (phone) result += `📞 **Phone:** ${phone}\n`;
+
+      if (t.opening_hours) result += `⏰ **Hours:** ${t.opening_hours}\n`;
+      if (t.emergency === 'yes') result += `🚨 **Emergency:** Available 24/7\n`;
+      if (t.speciality) result += `🩺 **Speciality:** ${t.speciality}\n`;
+
+      const website = t.website || t['contact:website'];
+      if (website) result += `🌐 **Website:** ${website}\n`;
+
+      if (h.coords) {
+        result += `🗺️ **Map:** https://maps.google.com/?q=${h.coords.lat},${h.coords.lon}\n`;
+      }
+      result += `\n---\n\n`;
+    });
+
+    result += `\n💡 **Booking Tips:**\n`;
+    result += `• Call ahead to confirm availability and insurance acceptance\n`;
+    result += `• Bring your ID, insurance card, and current medication list\n`;
+    result += `• For non-emergency visits, morning slots are usually less busy\n\n`;
+    result += `⚠️ *Data from OpenStreetMap. Verify details before visiting. For emergencies, call 911 immediately.*`;
+    return result;
   };
 
   const getMockResponse = async (message, service) => {
@@ -106,7 +263,7 @@ function App() {
     if (greetings.includes(lowerMessage) || greetings.includes(lowerMessage.replace('!', ''))) {
       return `👋 **Hello ${userName}!**
 
-Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 1.5 Pro.
+Welcome to MediCare AI! I'm your healthcare companion powered by Gemini 2.5 Flash.
 
 **How can I assist you today?**
 
@@ -207,6 +364,26 @@ Regarding: "${message}"
 *What specific insurance question can I help you with?*`;
     }
     
+    if (service === 'appointments' || lowerMessage.includes('nearest doctor') || lowerMessage.includes('hospital') || lowerMessage.includes('clinic') || lowerMessage.includes('appointment')) {
+      return `� **Location Access Needed for ${userName}**
+
+To show you **real nearby hospitals and clinics**, please allow location access in your browser when prompted.
+
+**How to enable location:**
+• Click the 🔒 padlock icon in your browser address bar
+• Set **Location** to **Allow**
+• Send your message again
+
+Once location is enabled, I'll show you:
+🏥 Real hospitals within 10km of you
+📞 Actual phone numbers and contacts
+⏰ Real availability and opening hours
+📏 Distance from your current location
+🗺️ Google Maps links for directions
+
+⚠️ *For emergencies, call 911 immediately.*`;
+    }
+
     if (service === 'emergency') {
       return `🚨 **Emergency Guidance for ${userName}**
 
@@ -278,16 +455,15 @@ Question: "${message}"
     }
   };
 
-  // Welcome Screen
+  // Welcome Screen — name entry only
   if (!conversationStarted) {
     return (
       <div className="welcome-container">
         <div className="welcome-header">
           <h1>🏥 MediCare AI Assistant</h1>
           <h3>Your Comprehensive Healthcare Companion</h3>
-          <p className="welcome-subtitle">Powered by Gemini 1.5 Pro AI • Available 24/7 • Trusted Healthcare Guidance</p>
+          <p className="welcome-subtitle">Powered by Gemini 2.5 Flash AI • Available 24/7 • Trusted Healthcare Guidance</p>
         </div>
-        
         <div className="welcome-form">
           <h3>👋 Welcome! Let's get started</h3>
           <input
@@ -298,7 +474,7 @@ Question: "${message}"
             onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
             className="name-input"
           />
-          <button 
+          <button
             onClick={handleNameSubmit}
             className="start-button"
             disabled={!userName.trim()}
@@ -310,141 +486,135 @@ Question: "${message}"
     );
   }
 
-  // Service Selection Screen
-  if (!serviceSelected) {
-    return (
-      <div className="service-container">
-        <div className="service-header">
-          <h2>Hello {userName}! 🌟</h2>
-          <p>I'm your MediCare AI Assistant. Choose a service below or chat freely about any health topic.</p>
-        </div>
-        
-        <div className="service-section">
-          <h3>🔹 Choose Your Service:</h3>
-          
-          <div className="service-grid">
-            <div className="service-column">
-              <button 
-                onClick={() => handleServiceSelect('health')}
-                className="service-button health"
-              >
-                🩺 Health Status Assessment
-              </button>
-              <button 
-                onClick={() => handleServiceSelect('insurance')}
-                className="service-button insurance"
-              >
-                🏥 Insurance Information
-              </button>
-              <button 
-                onClick={() => handleServiceSelect('appointments')}
-                className="service-button appointments"
-              >
-                📅 Doctor Appointment
-              </button>
-            </div>
-            
-            <div className="service-column">
-              <button 
-                onClick={() => handleServiceSelect('general')}
-                className="service-button general"
-              >
-                💊 General Health Queries
-              </button>
-              <button 
-                onClick={() => handleServiceSelect('emergency')}
-                className="service-button emergency"
-              >
-                🚨 Emergency Guidance
-              </button>
-              <button 
-                onClick={() => handleServiceSelect('chat')}
-                className="service-button chat primary"
-              >
-                💬 Chat Freely
-              </button>
-            </div>
-          </div>
-          
-          <div className="service-descriptions">
-            <h4>📋 Service Descriptions:</h4>
-            <ul>
-              <li><strong>Health Assessment:</strong> Analyze symptoms, get health guidance, understand conditions</li>
-              <li><strong>Insurance Info:</strong> Coverage questions, claims help, policy information</li>
-              <li><strong>Doctor Appointments:</strong> Find nearby doctors, book appointments, get referrals</li>
-              <li><strong>General Health:</strong> Medication info, health tips, preventive care</li>
-              <li><strong>Emergency:</strong> Urgent medical advice, emergency contacts, first aid</li>
-              <li><strong>Chat Freely:</strong> Ask any health-related question in natural conversation</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ── Single-page layout: header + service pills + chat + input ──
+  const suggestionChips = [
+    { label: '🤒 I have a headache', service: 'health' },
+    { label: '🏥 Find nearest hospital', service: 'appointments' },
+    { label: '📋 Check insurance coverage', service: 'insurance' },
+    { label: '🚨 Emergency guidance', service: 'emergency' },
+    { label: '💊 Medication question', service: 'general' },
+    { label: '💬 Chat freely', service: 'chat' },
+  ];
 
-  // Chat Interface
   return (
     <div className="app">
+
+      {/* ── Header ── */}
       <div className="chat-header">
-        <div className="header-content">
-          <h2>💬 {services[selectedService]} - {userName}</h2>
-          <button onClick={resetToServiceMenu} className="change-service-btn">
-            🔄 Change Service
+        <div className="header-left">
+          <span className="app-logo">🏥 MediCare AI</span>
+          {selectedService && (
+            <span className={`active-service-badge svc-${selectedService}`}>
+              {services[selectedService]}
+            </span>
+          )}
+        </div>
+        <div className="header-right">
+          <span className="user-greeting">Hello {userName}! 👋</span>
+          {messages.length > 0 && (
+            <button onClick={resetChat} className="change-service-btn">
+              🔄 New Chat
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Service Pills Bar ── */}
+      <div className="service-bar">
+        {Object.entries(services).map(([key, label]) => (
+          <button
+            key={key}
+            className={`service-pill svc-${key}${selectedService === key ? ' active' : ''}`}
+            onClick={() => handleServiceSelect(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Chat Area ── */}
+      <div className="chat-container">
+        {messages.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">💬</div>
+            <h3>How can I help you today, {userName}?</h3>
+            <p>Select a service above, click a suggestion, or type your question below</p>
+            <div className="suggestion-chips">
+              {suggestionChips.map(({ label, service }) => (
+                <button
+                  key={label}
+                  className="suggestion-chip"
+                  onClick={() => {
+                    handleServiceSelect(service);
+                    setInputMessage(label.replace(/^\S+\s/, ''));
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="messages-container">
+            {messages.map((message, index) => (
+              <div key={index} className={`message ${message.role}`}>
+                <div className="message-content">
+                  <div className="message-text" dangerouslySetInnerHTML={{
+                    __html: message.content
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+                      .replace(/(https?:\/\/[^\s<"]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+                      .replace(/\n/g, '<br/>')
+                  }} />
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="message assistant">
+                <div className="message-content">
+                  <div className="typing-indicator">
+                    <div className="typing-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <span className="typing-text">✨ Analyzing with Gemini 2.5 Flash...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Input Bar ── */}
+      <div className="input-container">
+        <div className="input-wrapper">
+          <textarea
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder={
+              selectedService
+                ? `Ask me anything about ${services[selectedService].toLowerCase()}...`
+                : 'Type your health question or select a service above...'
+            }
+            className="message-input"
+            rows="1"
+            disabled={isLoading}
+          />
+          <button
+            onClick={sendMessage}
+            className="send-button"
+            disabled={!inputMessage.trim() || isLoading}
+          >
+            <span className="send-icon">➤</span>
           </button>
         </div>
       </div>
 
-      <div className="chat-container">
-        <div className="messages-container">
-          {messages.map((message, index) => (
-            <div key={index} className={`message ${message.role}`}>
-              <div className="message-content">
-                <div className="message-text" dangerouslySetInnerHTML={{
-                  __html: message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\n/g, '<br/>')
-                    .replace(/• /g, '• ')
-                }} />
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="message assistant">
-              <div className="message-content">
-                <div className="typing-indicator">
-                  <div className="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                  <span className="typing-text">✨ Analyzing with Gemini 1.5 Pro...</span>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div className="input-container">
-          <div className="input-wrapper">
-            <textarea
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={`Ask me anything about ${services[selectedService].toLowerCase()}...`}
-              className="message-input"
-              rows="1"
-              disabled={isLoading}
-            />
-            <button 
-              onClick={sendMessage} 
-              className="send-button"
-              disabled={!inputMessage.trim() || isLoading}
-            >
-              <span className="send-icon">➤</span>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
