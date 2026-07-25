@@ -234,14 +234,29 @@ function App() {
           setIsLoading(false);
           return;
         }
-        locationContext.lookupError = 'lookup_failed';
+
+        if (err.code === 2) {
+          locationContext.lookupError = 'position_unavailable';
+        } else if (err.code === 3) {
+          locationContext.lookupError = 'location_timeout';
+        } else if (err.code === 'UNSUPPORTED') {
+          locationContext.lookupError = 'geo_unavailable';
+        } else if (err.code === 'INSECURE_CONTEXT') {
+          locationContext.lookupError = 'insecure_context';
+        } else {
+          locationContext.lookupError = 'lookup_failed';
+        }
         // Other errors (timeout, API down) — fall through to backend API without coordinates
       }
     }
 
     try {
       // API call to FastAPI backend — include location coords if available
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const fallbackApiUrl =
+        typeof window !== 'undefined' && process.env.NODE_ENV === 'production'
+          ? window.location.origin
+          : 'http://localhost:8000';
+      const apiUrl = process.env.REACT_APP_API_URL || fallbackApiUrl;
       const response = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
         headers: {
@@ -280,8 +295,17 @@ function App() {
   // Fetch real nearby hospitals using browser geolocation + OpenStreetMap Overpass API
   const getNearbyHospitals = () => {
     return new Promise((resolve, reject) => {
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+      if (typeof window !== 'undefined' && !window.isSecureContext && !isLocalhost) {
+        reject({ code: 'INSECURE_CONTEXT', message: 'Geolocation requires HTTPS on deployed sites' });
+        return;
+      }
+
       if (!navigator.geolocation) {
-        reject(new Error('Geolocation not supported'));
+        reject({ code: 'UNSUPPORTED', message: 'Geolocation not supported by this browser' });
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -504,6 +528,45 @@ To show you **real nearby hospitals and clinics**, please allow location access 
 
 ⚠️ *For emergencies, call 911 immediately.*`;
       }
+
+  if (locationContext.lookupError === 'insecure_context') {
+    return `🔒 **Location Requires Secure Site for ${userName}**
+
+Your browser only allows precise location on **HTTPS** sites (or localhost).
+
+**What to do:**
+• Open the deployed app using an HTTPS URL
+• Avoid using plain HTTP links
+• Retry **"find nearest hospital"** after opening secure URL
+
+⚠️ *For emergencies, call 911 immediately.*`;
+  }
+
+  if (locationContext.lookupError === 'geo_unavailable') {
+    return `📍 **Location Not Available in This Browser for ${userName}**
+
+Your browser/device does not provide geolocation for this session.
+
+**You can still continue:**
+• Share your city/area for manual guidance
+• Try another browser/device with location support
+• Ensure browser location services are enabled
+
+⚠️ *For emergencies, call 911 immediately.*`;
+  }
+
+  if (locationContext.lookupError === 'position_unavailable' || locationContext.lookupError === 'location_timeout') {
+    return `🛰️ **Could Not Get Current Location for ${userName}**
+
+I couldn't fetch a reliable GPS position just now.
+
+**Try this:**
+• Move to an open area / improve network signal
+• Retry in a few seconds
+• Share your city/area for broader hospital guidance
+
+⚠️ *For emergencies, call 911 immediately.*`;
+  }
 
       if (locationContext.attemptedLookup && locationContext.hasCoords) {
         if (locationContext.lookupError === 'no_results') {
