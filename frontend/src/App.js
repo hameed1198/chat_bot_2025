@@ -1,23 +1,36 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { lazy, useState, useRef, useEffect } from 'react';
+import { gsap } from 'gsap';
+import AppHeader from './components/layout/AppHeader';
+import ServiceBar from './components/layout/ServiceBar';
+import ChatStage from './components/layout/ChatStage';
+import { SERVICE_LABELS } from './config/services';
+import {
+  SERVICE_CHAT_MOTION,
+  MOTION_MODE_PROFILE,
+  MOTION_OPTIONS,
+  MOTION_PREF_STORAGE_KEY,
+  detectAutoMotionMode,
+  getStoredMotionPreference
+} from './config/motionConfig';
 import './index.css';
+
+const ImmersiveHeroScene = lazy(() => import('./components/3d/ImmersiveHeroScene'));
 
 function App() {
   const [userName, setUserName] = useState('');
   const [selectedService, setSelectedService] = useState('');
+  const [previewService, setPreviewService] = useState('');
+  const [motionPreference, setMotionPreference] = useState(getStoredMotionPreference);
+  const [autoMotionMode, setAutoMotionMode] = useState(detectAutoMotionMode);
   const [conversationStarted, setConversationStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const serviceBarRef = useRef(null);
+  const chatStageRef = useRef(null);
 
-  const services = {
-    'health': '🩺 Health Status Assessment',
-    'insurance': '🏥 Insurance Information',
-    'appointments': '📅 Doctor Appointment Assistance', 
-    'general': '💊 General Health Queries',
-    'emergency': '🚨 Emergency Guidance',
-    'chat': '💬 Chat Freely'
-  };
+  const services = SERVICE_LABELS;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -27,22 +40,132 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const updateAutoMode = () => {
+      setAutoMotionMode(detectAutoMotionMode());
+    };
+
+    updateAutoMode();
+    window.addEventListener('resize', updateAutoMode);
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', updateAutoMode);
+    } else {
+      mediaQuery.addListener(updateAutoMode);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateAutoMode);
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', updateAutoMode);
+      } else {
+        mediaQuery.removeListener(updateAutoMode);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(MOTION_PREF_STORAGE_KEY, motionPreference);
+    } catch {
+      // Ignore storage failures to keep motion controls functional in restricted environments.
+    }
+  }, [motionPreference]);
+
+  useEffect(() => {
+    if (!conversationStarted) {
+      return;
+    }
+
+    const effectiveMotionMode = motionPreference === 'auto' ? autoMotionMode : motionPreference;
+    const motionProfile = MOTION_MODE_PROFILE[effectiveMotionMode] || MOTION_MODE_PROFILE.balanced;
+
+    const timeline = gsap.timeline({ defaults: { ease: 'power2.out' } });
+
+    if (serviceBarRef.current) {
+      timeline.fromTo(
+        serviceBarRef.current,
+        { y: -8 * motionProfile.distanceScale, opacity: 0.85 },
+        { y: 0, opacity: 1, duration: 0.25 * motionProfile.durationScale }
+      );
+    }
+
+    if (chatStageRef.current) {
+      timeline.fromTo(
+        chatStageRef.current,
+        {
+          y: 14 * motionProfile.distanceScale,
+          opacity: 0.78,
+          filter: `blur(${(4 * motionProfile.blurScale).toFixed(2)}px)`
+        },
+        { y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.45 * motionProfile.durationScale },
+        '-=0.1'
+      );
+    }
+  }, [selectedService, conversationStarted, motionPreference, autoMotionMode]);
+
   const handleNameSubmit = () => {
     if (userName.trim()) {
       setConversationStarted(true);
     }
   };
 
-  const handleServiceSelect = (serviceKey) => {
+  const handleServiceSelect = (serviceKey, pillElement) => {
+    const effectiveMotionMode = motionPreference === 'auto' ? autoMotionMode : motionPreference;
+    const motionProfile = MOTION_MODE_PROFILE[effectiveMotionMode] || MOTION_MODE_PROFILE.balanced;
+
+    if (pillElement) {
+      gsap.fromTo(
+        pillElement,
+        { scale: 1 },
+        {
+          scale: 1 + (0.04 * motionProfile.distanceScale),
+          duration: 0.12 * motionProfile.durationScale,
+          yoyo: true,
+          repeat: 1,
+          ease: 'power1.inOut'
+        }
+      );
+    }
+
     setSelectedService(serviceKey);
+    setPreviewService('');
     setMessages([{
       role: 'assistant',
       content: `Hello ${userName}! 👋 I'm ready to help you with ${services[serviceKey].toLowerCase()}. What would you like to know?`
     }]);
   };
 
+  const handleServicePreview = (serviceKey) => {
+    if (!services[serviceKey]) {
+      return;
+    }
+
+    setPreviewService(serviceKey);
+  };
+
+  const clearServicePreview = () => {
+    setPreviewService('');
+  };
+
+  const handleSuggestionSelect = (label, service) => {
+    handleServiceSelect(service);
+    setInputMessage(label.replace(/^\S+\s/, ''));
+  };
+
   const resetChat = () => {
     setSelectedService('');
+    setPreviewService('');
     setMessages([]);
   };
 
@@ -60,6 +183,13 @@ function App() {
       lowerMsg.includes('clinic') || lowerMsg.includes('near me') ||
       lowerMsg.includes('doctor near') || lowerMsg.includes('appointment') ||
       (lowerMsg.includes('book') && lowerMsg.includes('doctor'));
+
+    const locationContext = {
+      isHospitalQuery,
+      attemptedLookup: false,
+      hasCoords: false,
+      lookupError: null
+    };
 
     // Auto-select service if none chosen based on message keywords
     if (!selectedService) {
@@ -79,20 +209,24 @@ function App() {
     let locationCoords = null;
 
     if (isHospitalQuery) {
+      locationContext.attemptedLookup = true;
       try {
         const locationData = await getNearbyHospitals();
         // Always store coords so we can send them to the backend
         locationCoords = { latitude: locationData.latitude, longitude: locationData.longitude };
+        locationContext.hasCoords = true;
         const formatted = formatHospitalResults(locationData.elements, locationData.latitude, locationData.longitude);
         if (formatted) {
           setMessages(prev => [...prev, { role: 'assistant', content: formatted }]);
           setIsLoading(false);
           return;
         }
+        locationContext.lookupError = 'no_results';
         // Overpass returned 0 named results — fall through to backend WITH coordinates
       } catch (err) {
         // Location permission denied
         if (err.code === 1) {
+          locationContext.lookupError = 'permission_denied';
           setMessages(prev => [...prev, {
             role: 'assistant',
             content: `📍 **Location Access Required**\n\nTo show you **real nearby hospitals**, I need access to your location.\n\n**How to enable:**\n• Click the 🔒 padlock icon in your browser's address bar\n• Set **Location** to **Allow**\n• Then send your message again\n\n*Alternatively, tell me your city name and I can provide general guidance.*`
@@ -100,6 +234,7 @@ function App() {
           setIsLoading(false);
           return;
         }
+        locationContext.lookupError = 'lookup_failed';
         // Other errors (timeout, API down) — fall through to backend API without coordinates
       }
     }
@@ -128,13 +263,13 @@ function App() {
         const data = await response.json();
         botResponse = data.response;
       } else {
-        botResponse = await getMockResponse(inputMessage, selectedService);
+        botResponse = await getMockResponse(inputMessage, selectedService, locationContext);
       }
 
       const assistantMessage = { role: 'assistant', content: botResponse };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      const botResponse = await getMockResponse(inputMessage, selectedService);
+      const botResponse = await getMockResponse(inputMessage, selectedService, locationContext);
       const assistantMessage = { role: 'assistant', content: botResponse };
       setMessages(prev => [...prev, assistantMessage]);
     } finally {
@@ -244,7 +379,7 @@ out center;`;
     return result;
   };
 
-  const getMockResponse = async (message, service) => {
+  const getMockResponse = async (message, service, locationContext = {}) => {
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
     
@@ -357,7 +492,8 @@ Regarding: "${message}"
     }
     
     if (service === 'appointments' || lowerMessage.includes('nearest doctor') || lowerMessage.includes('hospital') || lowerMessage.includes('clinic') || lowerMessage.includes('appointment')) {
-      return `� **Location Access Needed for ${userName}**
+      if (locationContext.lookupError === 'permission_denied') {
+        return `📍 **Location Access Needed for ${userName}**
 
 To show you **real nearby hospitals and clinics**, please allow location access in your browser when prompted.
 
@@ -366,14 +502,44 @@ To show you **real nearby hospitals and clinics**, please allow location access 
 • Set **Location** to **Allow**
 • Send your message again
 
-Once location is enabled, I'll show you:
-🏥 Real hospitals within 10km of you
-📞 Actual phone numbers and contacts
-⏰ Real availability and opening hours
-📏 Distance from your current location
-🗺️ Google Maps links for directions
+⚠️ *For emergencies, call 911 immediately.*`;
+      }
+
+      if (locationContext.attemptedLookup && locationContext.hasCoords) {
+        if (locationContext.lookupError === 'no_results') {
+          return `🏥 **Nearby Hospital Search Update for ${userName}**
+
+I received your location, but I could not find enough named hospital/clinic results nearby right now.
+
+**Try this:**
+• Share your city/area name for a broader search
+• Search again in a moment (map data services can be inconsistent)
+• Ask for appointment guidance and I can still help with next steps
 
 ⚠️ *For emergencies, call 911 immediately.*`;
+        }
+
+        return `📡 **Hospital Lookup Temporarily Unavailable for ${userName}**
+
+Your location permission is working, but the live hospital lookup service is temporarily unavailable.
+
+**You can still continue:**
+• Tell me your city/area and I can provide guidance
+• Ask me to help with appointment preparation/checklist
+• Retry nearby hospital search in a moment
+
+⚠️ *For emergencies, call 911 immediately.*`;
+      }
+
+      return `📅 **Appointment Assistance for ${userName}**
+
+I can help you with:
+• Finding nearby hospitals and clinics
+• Preparing for doctor appointments
+• Questions to ask your provider
+• Documents to carry (ID, insurance, medication list)
+
+If you want nearby options, say: **"find nearest hospital"**.`;
     }
 
     if (service === 'emergency') {
@@ -488,98 +654,90 @@ Question: "${message}"
     { label: '💬 Chat freely', service: 'chat' },
   ];
 
+  const heroService = previewService || selectedService || 'chat';
+  const effectiveMotionMode = motionPreference === 'auto' ? autoMotionMode : motionPreference;
+  const motionProfile = MOTION_MODE_PROFILE[effectiveMotionMode] || MOTION_MODE_PROFILE.balanced;
+  const baseChatMotion = SERVICE_CHAT_MOTION[selectedService] || SERVICE_CHAT_MOTION.chat;
+  const activeChatMotion = {
+    containerStart: {
+      x: baseChatMotion.containerStart.x * motionProfile.distanceScale,
+      y: baseChatMotion.containerStart.y * motionProfile.distanceScale,
+      scale: 1 - ((1 - baseChatMotion.containerStart.scale) * motionProfile.distanceScale)
+    },
+    containerExit: {
+      x: baseChatMotion.containerExit.x * motionProfile.distanceScale,
+      y: baseChatMotion.containerExit.y * motionProfile.distanceScale
+    },
+    itemOffsetX: baseChatMotion.itemOffsetX * motionProfile.distanceScale,
+    ease: baseChatMotion.ease,
+    duration: baseChatMotion.duration * motionProfile.durationScale,
+    stagger: 0.045 * motionProfile.staggerScale,
+    childDuration: 0.24 * motionProfile.durationScale
+  };
+  const messageItemVariants = {
+    hidden: {
+      opacity: 0,
+      y: 14 * motionProfile.distanceScale,
+      x: activeChatMotion.itemOffsetX,
+      scale: 1 - ((1 - 0.992) * motionProfile.distanceScale)
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      x: 0,
+      scale: 1,
+      transition: {
+        duration: activeChatMotion.childDuration,
+        ease: [0.22, 1, 0.36, 1]
+      }
+    }
+  };
+
   return (
     <div className="app">
 
       {/* ── Header ── */}
-      <div className="chat-header">
-        <div className="header-left">
-          <span className="app-logo">🏥 MediCare AI</span>
-          {selectedService && (
-            <span className={`active-service-badge svc-${selectedService}`}>
-              {services[selectedService]}
-            </span>
-          )}
-        </div>
-        <div className="header-right">
-          <span className="user-greeting">Hello {userName}! 👋</span>
-          {messages.length > 0 && (
-            <button onClick={resetChat} className="change-service-btn">
-              🔄 New Chat
-            </button>
-          )}
-        </div>
-      </div>
+      <AppHeader
+        selectedService={selectedService}
+        services={services}
+        userName={userName}
+        messagesLength={messages.length}
+        onResetChat={resetChat}
+        motionOptions={MOTION_OPTIONS}
+        motionPreference={motionPreference}
+        onSetMotionPreference={setMotionPreference}
+        autoMotionMode={autoMotionMode}
+      />
 
       {/* ── Service Pills Bar ── */}
-      <div className="service-bar">
-        {Object.entries(services).map(([key, label]) => (
-          <button
-            key={key}
-            className={`service-pill svc-${key}${selectedService === key ? ' active' : ''}`}
-            onClick={() => handleServiceSelect(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <ServiceBar
+        serviceBarRef={serviceBarRef}
+        services={services}
+        selectedService={selectedService}
+        onServiceSelect={handleServiceSelect}
+      />
 
       {/* ── Chat Area ── */}
-      <div className="chat-container">
-        {messages.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">💬</div>
-            <h3>How can I help you today, {userName}?</h3>
-            <p>Select a service above, click a suggestion, or type your question below</p>
-            <div className="suggestion-chips">
-              {suggestionChips.map(({ label, service }) => (
-                <button
-                  key={label}
-                  className="suggestion-chip"
-                  onClick={() => {
-                    handleServiceSelect(service);
-                    setInputMessage(label.replace(/^\S+\s/, ''));
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="messages-container">
-            {messages.map((message, index) => (
-              <div key={index} className={`message ${message.role}`}>
-                <div className="message-content">
-                  <div className="message-text" dangerouslySetInnerHTML={{
-                    __html: message.content
-                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-                      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-                      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-                      .replace(/(https?:\/\/[^\s<"]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
-                      .replace(/\n/g, '<br/>')
-                  }} />
-                </div>
-              </div>
-            ))}
-            {isLoading && (
-              <div className="message assistant">
-                <div className="message-content">
-                  <div className="typing-indicator">
-                    <div className="typing-dots">
-                      <span></span><span></span><span></span>
-                    </div>
-                    <span className="typing-text">✨ Analyzing with Gemini 2.5 Flash...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
+      <ChatStage
+        selectedService={selectedService}
+        effectiveMotionMode={effectiveMotionMode}
+        messages={messages}
+        chatStageRef={chatStageRef}
+        heroService={heroService}
+        HeroSceneComponent={ImmersiveHeroScene}
+        userName={userName}
+        services={services}
+        onServiceSelect={handleServiceSelect}
+        onServicePreview={handleServicePreview}
+        onPreviewEnd={clearServicePreview}
+        suggestionChips={suggestionChips}
+        onSuggestionSelect={handleSuggestionSelect}
+        activeChatMotion={activeChatMotion}
+        motionProfile={motionProfile}
+        messageItemVariants={messageItemVariants}
+        isLoading={isLoading}
+        messagesEndRef={messagesEndRef}
+      />
 
       {/* ── Input Bar ── */}
       <div className="input-container">
