@@ -3,7 +3,6 @@ import './index.css';
 
 function App() {
   const [userName, setUserName] = useState('');
-  const [serviceSelected, setServiceSelected] = useState(false);
   const [selectedService, setSelectedService] = useState('');
   const [conversationStarted, setConversationStarted] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -36,7 +35,6 @@ function App() {
 
   const handleServiceSelect = (serviceKey) => {
     setSelectedService(serviceKey);
-    setServiceSelected(true);
     setMessages([{
       role: 'assistant',
       content: `Hello ${userName}! 👋 I'm ready to help you with ${services[serviceKey].toLowerCase()}. What would you like to know?`
@@ -45,7 +43,6 @@ function App() {
 
   const resetChat = () => {
     setSelectedService('');
-    setServiceSelected(false);
     setMessages([]);
   };
 
@@ -62,25 +59,20 @@ function App() {
       lowerMsg.includes('hospital') || lowerMsg.includes('nearest doctor') ||
       lowerMsg.includes('clinic') || lowerMsg.includes('near me') ||
       lowerMsg.includes('doctor near') || lowerMsg.includes('appointment') ||
-      lowerMsg.includes('book') && lowerMsg.includes('doctor');
+      (lowerMsg.includes('book') && lowerMsg.includes('doctor'));
 
     // Auto-select service if none chosen based on message keywords
     if (!selectedService) {
       if (lowerMsg.includes('hospital') || lowerMsg.includes('appointment') || lowerMsg.includes('doctor near') || lowerMsg.includes('clinic') || lowerMsg.includes('near me')) {
         setSelectedService('appointments');
-        setServiceSelected(true);
       } else if (lowerMsg.includes('emergency') || lowerMsg.includes('urgent') || lowerMsg.includes('911')) {
         setSelectedService('emergency');
-        setServiceSelected(true);
       } else if (lowerMsg.includes('insurance') || lowerMsg.includes('coverage') || lowerMsg.includes('claim')) {
         setSelectedService('insurance');
-        setServiceSelected(true);
       } else if (lowerMsg.includes('symptom') || lowerMsg.includes('pain') || lowerMsg.includes('fever') || lowerMsg.includes('sick')) {
         setSelectedService('health');
-        setServiceSelected(true);
       } else {
         setSelectedService('chat');
-        setServiceSelected(true);
       }
     }
 
